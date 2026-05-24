@@ -136,26 +136,27 @@ codex-model deepseek-v4-pro
 codex-app
 ```
 
-### 5. 模式切换：ChatGPT ↔ DeepSeek
+### 5. 日常使用流程
 
-如果你同时拥有 ChatGPT Plus（有使用额度限制），可以随时在 shim 的直接模式和代理模式间切换：
+推荐的工作流——用最简单的方式在 ChatGPT 和 DeepSeek 之间切换：
 
 ```bash
-# 查看当前模式
-codex-shim mode
+# 使用 DeepSeek（ChatGPT 额度耗尽时）
+codex-shim app .
 
-# 切换到直接模式：gpt-5.5 走 ChatGPT 官方通道（额度充足时使用）
-codex-shim mode direct
-codex-shim restart
-
-# 切换到 Shim 模式：gpt-5.5 重定向到 DeepSeek（额度耗尽时使用）
-codex-shim mode shim
-codex-shim restart
+# 切回官方 GPT-5.5（ChatGPT 额度恢复后）
+codex-shim quit
 ```
 
-**直接模式（direct）**：gpt-5.5 请求转发到 `chatgpt.com`，使用你的 ChatGPT Plus 额度，体验完整的官方 GPT-5.5。
+`codex-shim app .` 启动 shim 并注入配置，`codex-shim quit` 停止 shim 并恢复 Codex 原始配置。
 
-**Shim 模式（shim）**：gpt-5.5 请求重定向到 `~/.factory/settings.json` 中配置的第一个自定义模型（如 DeepSeek），无需 ChatGPT 订阅。
+如果你希望 shim 持续运行但切换路由目标，也可以使用模式切换：
+
+```bash
+codex-shim mode direct    # gpt-5.5 → ChatGPT 官方通道
+codex-shim mode shim      # gpt-5.5 → DeepSeek（默认）
+codex-shim restart
+```
 
 ### 6. 停止
 
@@ -233,6 +234,7 @@ sudo codex-shim restore-app
 | `codex-shim generate` | 重新生成模型目录和配置 |
 | `codex-shim start` | 启动后台守护进程 |
 | `codex-shim stop` | 停止守护进程 |
+| `codex-shim quit` | 停止守护进程 + 恢复 Codex 原始配置 |
 | `codex-shim restart` | 重启守护进程 |
 | `codex-shim status` | 健康检查 + 模型数量 |
 | `codex-shim list` | 列出所有模型和路由 |

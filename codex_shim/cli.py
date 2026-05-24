@@ -38,6 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("stop")
     sub.add_parser("disable")
     sub.add_parser("restart")
+    sub.add_parser("quit", help="Stop shim and restore Codex original config (alias for disable).")
     sub.add_parser("status")
     sub.add_parser("patch-app", help="Patch Codex Desktop model dropdown to allow custom catalog models.")
     sub.add_parser("restore-app", help="Restore Codex Desktop app.asar from the pre-patch backup.")
@@ -70,8 +71,8 @@ def main(argv: list[str] | None = None) -> int:
         if code == 0 and args.command == "enable":
             install_codex_config(args.settings, args.port)
         return code
-    if args.command in {"stop", "disable"}:
-        if args.command == "disable":
+    if args.command in {"stop", "disable", "quit"}:
+        if args.command in {"disable", "quit"}:
             restore_codex_config()
         return stop()
     if args.command == "restart":
