@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import ssl
 import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin
 
-from aiohttp import ClientSession, ClientTimeout, web
+import certifi
+from aiohttp import ClientSession, ClientTimeout, TCPConnector, web
 
 from .settings import DEFAULT_FACTORY_SETTINGS, DEFAULT_HOST, DEFAULT_PORT, FactoryModel, FactorySettings
 from .translate import (
@@ -18,6 +20,15 @@ from .translate import (
     responses_to_anthropic,
     responses_to_chat,
 )
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """Create an SSL context using certifi's CA bundle.
+    Required on Python 3.14+ which does not use the system trust store by default."""
+    return ssl.create_default_context(cafile=certifi.where())
+
+
+_SHARED_SSL_CTX = _ssl_context()
 
 
 class ShimServer:
@@ -58,8 +69,12 @@ class ShimServer:
         body = await request.json()
         _log_incoming_request("/v1/responses", body)
         model = str(body.get("model") or "")
+        # Codex Desktop always sends "gpt-5.5" regardless of config.toml.
+        # Redirect it to our default DeepSeek model so requests work without
+        # the ChatGPT passthrough.
         if model == "gpt-5.5" or model.startswith("openai-gpt-5-5"):
-            return await self._chatgpt_passthrough(request, body)
+            body = dict(body)
+            body["model"] = self.settings.load()[0].slug
         route = self._route(body)
         if route.is_openai_chat:
             forwarded = responses_to_chat(body, route.model)
@@ -99,7 +114,7 @@ class ShimServer:
             "session_id": request.headers.get("session_id", ""),
         }
         url = "https://chatgpt.com/backend-api/codex/responses"
-        async with ClientSession(timeout=self.timeout) as session:
+        async with ClientSession(timeout=self.timeout, connector=TCPConnector(ssl=_SHARED_SSL_CTX)) as session:
             upstream = await session.post(url, json=forwarded, headers=headers)
             if upstream.status >= 400:
                 return await _error_response(upstream)
@@ -133,10 +148,14 @@ class ShimServer:
     ) -> web.StreamResponse:
         url = _join_url(route.base_url, "/chat/completions")
         headers = _openai_headers(route)
-        async with ClientSession(timeout=self.timeout) as session:
+        # Disable DeepSeek's thinking mode to avoid reasoning_content round-trip
+        # errors. DeepSeek V4 defaults to thinking=on, which requires every
+        # assistant message to carry reasoning_content back — this breaks when
+        # Codex truncates conversation history and drops reasoning items.
+        body = dict(body)
+        body.setdefault("thinking", {})["type"] = "disabled"
+        async with ClientSession(timeout=self.timeout, connector=TCPConnector(ssl=_SHARED_SSL_CTX)) as session:
             upstream = await session.post(url, json=body, headers=headers)
-            if upstream.status >= 400:
-                return await _error_response(upstream)
             if body.get("stream"):
                 return await self._stream_openai_chat(request, upstream, route, as_responses)
             payload = await upstream.json(content_type=None)
@@ -149,7 +168,7 @@ class ShimServer:
     ) -> web.StreamResponse:
         url = _join_url(route.base_url, "/messages")
         headers = _anthropic_headers(route)
-        async with ClientSession(timeout=self.timeout) as session:
+        async with ClientSession(timeout=self.timeout, connector=TCPConnector(ssl=_SHARED_SSL_CTX)) as session:
             upstream = await session.post(url, json=body, headers=headers)
             if upstream.status >= 400:
                 return await _error_response(upstream)
