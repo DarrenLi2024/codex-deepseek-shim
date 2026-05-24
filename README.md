@@ -136,7 +136,28 @@ codex-model deepseek-v4-pro
 codex-app
 ```
 
-### 5. 停止
+### 5. 模式切换：ChatGPT ↔ DeepSeek
+
+如果你同时拥有 ChatGPT Plus（有使用额度限制），可以随时在 shim 的直接模式和代理模式间切换：
+
+```bash
+# 查看当前模式
+codex-shim mode
+
+# 切换到直接模式：gpt-5.5 走 ChatGPT 官方通道（额度充足时使用）
+codex-shim mode direct
+codex-shim restart
+
+# 切换到 Shim 模式：gpt-5.5 重定向到 DeepSeek（额度耗尽时使用）
+codex-shim mode shim
+codex-shim restart
+```
+
+**直接模式（direct）**：gpt-5.5 请求转发到 `chatgpt.com`，使用你的 ChatGPT Plus 额度，体验完整的官方 GPT-5.5。
+
+**Shim 模式（shim）**：gpt-5.5 请求重定向到 `~/.factory/settings.json` 中配置的第一个自定义模型（如 DeepSeek），无需 ChatGPT 订阅。
+
+### 6. 停止
 
 ```bash
 codex-shim stop          # 停止 shim 守护进程
@@ -179,7 +200,15 @@ OpenAI Responses API 使用 `developer` 角色，但 DeepSeek 只支持 `system/
 
 **解决方案**：在协议翻译层将 `developer` 自动映射为 `system`。
 
-### 6. 模型选择器补丁（针对 macOS）
+### 6. 运行模式切换：direct ↔ shim
+
+支持在运行时通过 `codex-shim mode` 命令切换 gpt-5.5 请求的路由目标：
+- **shim 模式（默认）**：gpt-5.5 → 重定向到 settings.json 中的第一个自定义模型（如 DeepSeek），无需 ChatGPT 订阅
+- **direct 模式**：gpt-5.5 → 转发到 ChatGPT 官方通道，使用 ChatGPT Plus 额度
+
+这使得用户可以在 ChatGPT 额度充足时享受官方 GPT-5.5 体验，额度耗尽时无缝切回 DeepSeek。
+
+### 7. 模型选择器补丁（针对 macOS）
 
 如果 Codex Desktop 的模型下拉列表只显示 "default" 而看不到自定义模型，说明 Statsig 服务端白名单启用了隐藏。可以通过修改 ASAR 包来关闭这个白名单：
 
@@ -207,6 +236,7 @@ sudo codex-shim restore-app
 | `codex-shim restart` | 重启守护进程 |
 | `codex-shim status` | 健康检查 + 模型数量 |
 | `codex-shim list` | 列出所有模型和路由 |
+| `codex-shim mode [direct\|shim]` | 查看或切换路由模式（直接/shim） |
 | `codex-shim model list` | 列出当前可用模型 |
 | `codex-shim model use <slug>` | 设置默认模型 |
 | `codex-shim app [path]` | 启动 Codex Desktop 并连接 shim |

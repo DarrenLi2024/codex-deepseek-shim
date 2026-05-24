@@ -30,6 +30,18 @@ def _ssl_context() -> ssl.SSLContext:
 
 _SHARED_SSL_CTX = _ssl_context()
 
+# Mode file for switching between shim mode (gpt-5.5 → DeepSeek) and
+# direct mode (gpt-5.5 → ChatGPT passthrough).
+_RUNTIME_DIR = Path(__file__).resolve().parents[1] / ".codex-shim"
+_MODE_PATH = _RUNTIME_DIR / "mode"
+
+
+def _read_mode() -> str:
+    try:
+        return _MODE_PATH.read_text().strip()
+    except Exception:
+        return "shim"
+
 
 class ShimServer:
     def __init__(self, settings_path: Path = DEFAULT_FACTORY_SETTINGS):
@@ -69,10 +81,13 @@ class ShimServer:
         body = await request.json()
         _log_incoming_request("/v1/responses", body)
         model = str(body.get("model") or "")
-        # Codex Desktop always sends "gpt-5.5" regardless of config.toml.
-        # Redirect it to our default DeepSeek model so requests work without
-        # the ChatGPT passthrough.
         if model == "gpt-5.5" or model.startswith("openai-gpt-5-5"):
+            mode = _read_mode()
+            if mode == "direct":
+                # Forward to ChatGPT passthrough (requires ChatGPT subscription)
+                return await self._chatgpt_passthrough(request, body)
+            # "shim" mode (default): redirect to the first custom model
+            # (e.g. DeepSeek) so requests work without ChatGPT subscription.
             body = dict(body)
             body["model"] = self.settings.load()[0].slug
         route = self._route(body)

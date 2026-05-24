@@ -48,6 +48,9 @@ def main(argv: list[str] | None = None) -> int:
     use_parser = model_sub.add_parser("use")
     use_parser.add_argument("model_slug")
 
+    mode_parser = sub.add_parser("mode", help="Show or set shim routing mode (direct|shim).")
+    mode_parser.add_argument("value", nargs="?", choices=["direct", "shim"])
+
     codex_parser = sub.add_parser("codex", help="Run Codex CLI with opt-in shim config overrides.")
     codex_parser.add_argument("args", nargs=argparse.REMAINDER)
 
@@ -90,6 +93,8 @@ def main(argv: list[str] | None = None) -> int:
             install_codex_config(args.settings, args.port, args.model_slug)
             print(f"Active Codex shim model: {args.model_slug}")
             return 0
+    if args.command == "mode":
+        return mode_command(getattr(args, 'value', None))
     if args.command == "codex":
         generate(args.settings, args.port)
         ensure_started(args.settings, args.port)
@@ -221,6 +226,26 @@ def ensure_started(settings_path: Path, port: int) -> None:
         code = start(settings_path, port)
         if code:
             raise SystemExit(code)
+
+
+MODE_PATH = RUNTIME_DIR / "mode"
+
+
+def mode_command(value: str | None) -> int:
+    if value:
+        RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+        MODE_PATH.write_text(value + "\n")
+        print(f"Shim mode set to: {value}")
+        print("Restart the shim for the change to take effect: codex-shim restart")
+        return 0
+    try:
+        current = MODE_PATH.read_text().strip()
+    except Exception:
+        current = "shim"
+    print(f"Current shim mode: {current}")
+    print("  direct  → gpt-5.5 requests go to ChatGPT passthrough (needs ChatGPT+)")
+    print("  shim    → gpt-5.5 requests redirect to your first custom model (DeepSeek)")
+    return 0
 
 
 def exec_codex(settings_path: Path, port: int, codex_args: list[str]) -> None:
