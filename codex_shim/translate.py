@@ -212,6 +212,20 @@ def chat_completion_to_response(payload: dict[str, Any], requested_model: str) -
     choice = (payload.get("choices") or [{}])[0]
     message = choice.get("message") or {}
     output: list[dict[str, Any]] = []
+
+    # Preserve reasoning_content from DeepSeek's thinking mode so it gets
+    # passed back on subsequent requests via _responses_input_to_messages.
+    reasoning = message.get("reasoning_content") or message.get("reasoning")
+    if reasoning:
+        output.append(
+            {
+                "type": "reasoning",
+                "status": "completed",
+                "summary": [{"type": "summary_text", "text": strip_think(reasoning)}],
+                "encrypted_content": None,
+            }
+        )
+
     text = strip_think(message.get("content") or "")
     if text:
         output.append(
@@ -263,25 +277,46 @@ def _responses_input_to_messages(value: Any) -> list[dict[str, Any]]:
         return [{"role": "user", "content": _content_to_text(value)}]
     messages: list[dict[str, Any]] = []
     pending_tool_calls: list[dict[str, Any]] = []
+    pending_reasoning_text: str | None = None  # reasoning content to attach to next assistant message
 
-    def flush_pending_assistant_tool_calls():
+    def flush_pending_assistant():
+        """Flush pending tool calls into a single assistant message."""
+        nonlocal pending_reasoning_text
         if pending_tool_calls:
-            messages.append({"role": "assistant", "content": None, "tool_calls": list(pending_tool_calls)})
+            msg: dict[str, Any] = {"role": "assistant", "content": None, "tool_calls": list(pending_tool_calls)}
+            # Attach any pending reasoning to the tool call assistant message
+            if pending_reasoning_text:
+                msg["reasoning_content"] = pending_reasoning_text
+                pending_reasoning_text = None
+            messages.append(msg)
             pending_tool_calls.clear()
+
+    def attach_reasoning(msg: dict[str, Any]) -> None:
+        """Attach pending reasoning_content to an assistant message."""
+        nonlocal pending_reasoning_text
+        if msg.get("role") == "assistant" and pending_reasoning_text:
+            msg["reasoning_content"] = pending_reasoning_text
+            pending_reasoning_text = None
 
     for item in value:
         if isinstance(item, str):
-            flush_pending_assistant_tool_calls()
+            flush_pending_assistant()
             messages.append({"role": "user", "content": item})
             continue
         if not isinstance(item, dict):
             continue
         item_type = item.get("type")
         if item_type in {"message", None} and "role" in item:
-            flush_pending_assistant_tool_calls()
-            messages.append({"role": item.get("role", "user"), "content": _content_to_text(item.get("content", ""))})
+            flush_pending_assistant()
+            role = item.get("role", "user")
+            if role == "developer":
+                role = "system"
+            content = _content_to_text(item.get("content", ""))
+            msg: dict[str, Any] = {"role": role, "content": content}
+            attach_reasoning(msg)
+            messages.append(msg)
         elif item_type in {"input_text", "text"}:
-            flush_pending_assistant_tool_calls()
+            flush_pending_assistant()
             messages.append({"role": "user", "content": _content_to_text(item)})
         elif item_type == "function_call":
             # Coalesce consecutive function_call items into a single assistant
@@ -299,13 +334,18 @@ def _responses_input_to_messages(value: Any) -> list[dict[str, Any]]:
                 }
             )
         elif item_type == "function_call_output":
-            flush_pending_assistant_tool_calls()
+            flush_pending_assistant()
             messages.append({"role": "tool", "tool_call_id": item.get("call_id"), "content": _content_to_text(item.get("output", ""))})
         elif item_type == "reasoning":
-            # For Chat-Completions upstreams reasoning is informational only.
-            # We keep it as a marker so the Anthropic translator can reattach
-            # encrypted_content as a `thinking` block on the assistant turn.
-            flush_pending_assistant_tool_calls()
+            # Save reasoning content FIRST so it can be attached to the pending
+            # assistant (tool calls) message that follows next.
+            summary = item.get("summary") or []
+            if summary and isinstance(summary, list):
+                parts = [s.get("text", "") for s in summary if isinstance(s, dict)]
+                pending_reasoning_text = "\n".join(p for p in parts if p)
+            flush_pending_assistant()
+            # Also keep the marker for the Anthropic path which needs the
+            # encrypted content for thinking block round-tripping.
             messages.append(
                 {
                     "role": "assistant",
@@ -315,7 +355,10 @@ def _responses_input_to_messages(value: Any) -> list[dict[str, Any]]:
                     "content": None,
                 }
             )
-    flush_pending_assistant_tool_calls()
+    flush_pending_assistant()
+    # Don't emit a standalone reasoning-only assistant message at the end of
+    # the conversation. DeepSeek rejects assistant messages that have
+    # reasoning_content but no content or tool_calls.
     return messages
 
 
