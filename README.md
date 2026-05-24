@@ -1,10 +1,10 @@
-# codex-shim
+# codex-deepseek-shim
 
 在 **Codex Desktop** 中使用你的自定义模型（DeepSeek、Claude、OpenAI 等），绕过官方模型白名单限制。
 
 这是一个轻量本地 Python 代理服务器，它会伪装成 OpenAI Responses API 端点，Codex 将请求发到 shim 后，shim 根据配置将请求转发给真实的上游 API（OpenAI Chat Completions / Anthropic Messages），同时完成协议转换和适配。
 
-> 基于 [0xSero/codex-shim](https://github.com/0xSero/codex-shim) 分支，专为 **DeepSeek V4** 等非 OpenAI 模型深度适配优化。
+> Fork 自 [0xSero/codex-shim](https://github.com/0xSero/codex-shim)，专为 **DeepSeek V4** 等非 OpenAI 模型深度适配优化。
 
 ---
 
@@ -35,7 +35,7 @@ Codex Desktop ── /v1/responses ──▶ codex-shim (127.0.0.1:8765)
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/DarrenLi2024/codex-shim ~/Documents/codex-shim
+git clone https://github.com/DarrenLi2024/codex-deepseek-shim ~/Documents/codex-deepseek-shim
 cd ~/Documents/codex-shim
 
 # 2. 安装 Python 依赖
